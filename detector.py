@@ -69,10 +69,14 @@ class Detector:
         timestamp = datetime.datetime.now()
         time = timestamp.strftime("%X").replace(':', '_')
         date = timestamp.strftime("%x").replace('/', '_')
-        timestamp_str = date + ' ' + time
+        timestamp_str = date + ' ' + time + '.pt'
         torch.save(self.model.state_dict(), os.path.join(path, timestamp_str))
 
+    def display_result(self):
+        
+
     def train(self):
+        self.model.train()
         print('-----------------Begin training-----------------')
         for epoch in range(self.n_epochs):
             loss_train = 0
@@ -97,9 +101,9 @@ class Detector:
                 batch_y = batch_y[:,:,diff:(batch_y.shape[2]-diff),diff:(batch_y.shape[2]-diff)]
 
                 if verbose:
-                    print('batch_x shape: ', batch_x.shape) # tensor size: (10, 1, 400, 400)
-                    print('batch_y shape: ', batch_y.shape) # tensor size: (10, 2, 400, 400)              
-                    print('Model predictions pred_y shape: ', pred_y.shape) # tensor size: (10, 2, 360, 360)
+                    print('batch_x shape: ', batch_x.shape)
+                    print('batch_y shape: ', batch_y.shape)           
+                    print('Model predictions pred_y shape: ', pred_y.shape)
 
                 ### Compute the training loss ###
                 loss_train = self.criterion(pred_y, batch_y)
@@ -115,6 +119,7 @@ def main():
     detector.load_image('.\\dataset')
     detector.train()
     detector.save_model('.\\model')
+    detector.display_result()
 
 if __name__ == '__main__':
     main()
