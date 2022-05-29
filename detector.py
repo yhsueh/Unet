@@ -7,17 +7,21 @@ from PIL import Image
 import numpy as np
 import glob
 import os
+import datetime
 import unet
+
+global verbose
+verbose = False
 
 class Detector:
     def __init__(self): 
-        self.model = unet.Encoder()
+        self.model = unet.Unet()
         self.configuration()
 
     def configuration(self):
         ### hyperparameters ###
         # defining the number of epochs
-        self.n_epochs = 10
+        self.n_epochs = 1
         
         # define batch size
         self.batch_size = 10
@@ -38,7 +42,7 @@ class Detector:
         img_path = os.path.join(path, "img")
         mask_path = os.path.join(path, "mask")
         
-        #train_img = self._grab_image(img_path)
+        train_img = self._grab_image(img_path)
         train_mask = self._grab_image(mask_path, True)
 
         self.train_x = torch.from_numpy(train_img)
@@ -54,15 +58,22 @@ class Detector:
                         im /= 255.0
                         imgs.append(im)
                     else:
+                        # class one: defects; class two: background
                         mask_class_one = np.array(im).astype(bool)
                         mask_class_two = ~mask_class_one
                         imgs.append([mask_class_one.astype('float32'), mask_class_two.astype('float32')])
         imgs = np.array(imgs)
         return imgs
 
-    def train(self):
-        print('Begin training')
+    def save_model(self, path):
+        timestamp = datetime.datetime.now()
+        time = timestamp.strftime("%X").replace(':', '_')
+        date = timestamp.strftime("%x").replace('/', '_')
+        timestamp_str = date + ' ' + time
+        torch.save(self.model.state_dict(), os.path.join(path, timestamp_str))
 
+    def train(self):
+        print('-----------------Begin training-----------------')
         for epoch in range(self.n_epochs):
             loss_train = 0
             # randomly generate subsample batch
@@ -76,22 +87,22 @@ class Detector:
                 indicies = permutation[i:i+self.batch_size]
                 batch_x = self.train_x[indicies]
                 batch_y = self.train_y[indicies]
-                print('batch_x: ', batch_x.shape) # tensor size: 10, 400, 400
-                print('batch_y: ', batch_y.shape)
-
                 batch_x = torch.unsqueeze(batch_x, dim = 1)
-                batch_y = torch.unsqueeze(batch_y, dim = 1)
+                
                 ### Model Prediction ###
-                predictions = self.model(batch_x)                
+                pred_y = self.model(batch_x)
 
                 ### Crop mask in order to match it with the prediction ###
-                batch_y = batch_y[:, :, 20:380, 20:380]
+                diff = int((batch_y.shape[2] - pred_y.shape[2])/2)
+                batch_y = batch_y[:,:,diff:(batch_y.shape[2]-diff),diff:(batch_y.shape[2]-diff)]
 
-                #print('prediction size:', predictions.shape)
-                #print('batch_y', batch_y.shape)
+                if verbose:
+                    print('batch_x shape: ', batch_x.shape) # tensor size: (10, 1, 400, 400)
+                    print('batch_y shape: ', batch_y.shape) # tensor size: (10, 2, 400, 400)              
+                    print('Model predictions pred_y shape: ', pred_y.shape) # tensor size: (10, 2, 360, 360)
 
                 ### Compute the training loss ###
-                loss_train = self.criterion(predictions, batch_y)
+                loss_train = self.criterion(pred_y, batch_y)
                 self.train_losses.append(loss_train)
 
                 ### Backprop and update weights ###
@@ -103,6 +114,7 @@ def main():
     detector = Detector()
     detector.load_image('.\\dataset')
     detector.train()
+    detector.save_model('.\\model')
 
 if __name__ == '__main__':
     main()
