@@ -17,7 +17,7 @@ class Detector:
     def configuration(self):
         ### hyperparameters ###
         # defining the number of epochs
-        self.n_epochs = 2
+        self.n_epochs = 10
         
         # define batch size
         self.batch_size = 10
@@ -32,13 +32,13 @@ class Detector:
         self.optimizer = optim.SGD(self.model.parameters(), lr = 0.01)
 
         ### criterion ###
-        self.criterion = nn.MSELoss()
+        self.criterion = nn.CrossEntropyLoss()
 
     def load_image(self, path):
         img_path = os.path.join(path, "img")
         mask_path = os.path.join(path, "mask")
         
-        train_img = self._grab_image(img_path)
+        #train_img = self._grab_image(img_path)
         train_mask = self._grab_image(mask_path, True)
 
         self.train_x = torch.from_numpy(train_img)
@@ -54,8 +54,9 @@ class Detector:
                         im /= 255.0
                         imgs.append(im)
                     else:
-                        im = np.array(im).astype(bool)
-                        imgs.append(im)
+                        mask_class_one = np.array(im).astype(bool)
+                        mask_class_two = ~mask_class_one
+                        imgs.append([mask_class_one.astype('float32'), mask_class_two.astype('float32')])
         imgs = np.array(imgs)
         return imgs
 
@@ -63,7 +64,7 @@ class Detector:
         print('Begin training')
 
         for epoch in range(self.n_epochs):
-            print_flag = True
+            loss_train = 0
             # randomly generate subsample batch
             permutation = torch.randperm(self.train_x.size()[0])
 
@@ -75,21 +76,28 @@ class Detector:
                 indicies = permutation[i:i+self.batch_size]
                 batch_x = self.train_x[indicies]
                 batch_y = self.train_y[indicies]
-                batch_x = torch.unsqueeze(batch_x, dim = 0)
-                batch_y = torch.unsqueeze(batch_y, dim = 0)
+                print('batch_x: ', batch_x.shape) # tensor size: 10, 400, 400
+                print('batch_y: ', batch_y.shape)
+
+                batch_x = torch.unsqueeze(batch_x, dim = 1)
+                batch_y = torch.unsqueeze(batch_y, dim = 1)
                 ### Model Prediction ###
-                predictions = self.model(batch_x)
+                predictions = self.model(batch_x)                
+
+                ### Crop mask in order to match it with the prediction ###
+                batch_y = batch_y[:, :, 20:380, 20:380]
+
+                #print('prediction size:', predictions.shape)
+                #print('batch_y', batch_y.shape)
 
                 ### Compute the training loss ###
-                loss_train = self.criterion(output_train, y_train)
-                self.trainlosses.append(loss_train)
+                loss_train = self.criterion(predictions, batch_y)
+                self.train_losses.append(loss_train)
 
                 ### Backprop and update weights ###
                 loss_train.backward()
                 self.optimizer.step()
-
-                if print_flag:
-                    print('Epoch: {}, Loss: {}\n'.format(epoch, loss_train))
+            print('Epoch: {}, Loss: {}\n'.format(epoch, loss_train))
 
 def main():
     detector = Detector()
