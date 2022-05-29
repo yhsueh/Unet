@@ -61,6 +61,15 @@ class Detector:
                         # class one: defects; class two: background
                         mask_class_one = np.array(im).astype(bool)
                         mask_class_two = ~mask_class_one
+
+                        '''
+                        f, ax = plt.subplots(1,2)
+                        print('mask_one', mask_class_one.astype('float32'))
+                        print('mask_two', mask_class_two.astype('float32'))
+                        ax[0].imshow(mask_class_one, cmap='gray')
+                        ax[1].imshow(mask_class_two, cmap='gray')
+                        plt.show()
+                        '''
                         imgs.append([mask_class_one.astype('float32'), mask_class_two.astype('float32')])
         imgs = np.array(imgs)
         return imgs
@@ -71,9 +80,6 @@ class Detector:
         date = timestamp.strftime("%x").replace('/', '_')
         timestamp_str = date + ' ' + time + '.pt'
         torch.save(self.model.state_dict(), os.path.join(path, timestamp_str))
-
-    def display_result(self):
-        
 
     def train(self):
         self.model.train()
@@ -113,6 +119,13 @@ class Detector:
                 loss_train.backward()
                 self.optimizer.step()
             print('Epoch: {}, Loss: {}\n'.format(epoch, loss_train))
+
+    def display_result(self):
+        plt.plot(np.arange(100).astype(int)+1, self.train_losses, label='training loss')
+        plt.xlabel('epoch')
+        plt.ylabel('cross entroy loss')
+        plt.legend()
+        plt.savefig('./plot/training_loss')
 
 def main():
     detector = Detector()

@@ -11,36 +11,34 @@ import os
 import datetime
 import unet
 
-
 def main():
 	model = unet.Unet()
-	model.load_state_dict(torch.load('.\\model\\05_29_22 14_03_02'))
+	model.load_state_dict(torch.load('./model/05_29_22 17_12_45.pt'))
 	model.eval()
 
-	with Image.open('.\\dataset\\crop_19.png').convert('L') as im:
-		im = np.array(im).astype('float32')
-		im /= 255.0
+	with Image.open('./dataset/test_img/crop_22.png').convert('L') as im:
+	    f, ax = plt.subplots(1,2)
+	    ax[0].imshow(im, cmap='gray')
 
-		torch_im = torch.from_numpy(im)
-		torch_im = torch.unsqueeze(torch_im, dim=0)
-		torch_im = torch.unsqueeze(torch_im, dim=0)
+	    im = np.array(im).astype('float32')
+	    im /= 255.0
+	    torch_im = torch.from_numpy(im)
+	    torch_im = torch.unsqueeze(torch_im, dim=0)
+	    torch_im = torch.unsqueeze(torch_im, dim=0)
 
-		with torch.no_grad():
-			output = model(torch_im)
+	    with torch.no_grad():
+	        output = model(torch_im)
 
-		softmax = torch.nn.Softmax2d()
-		output = softmax(output)
+	    probs = F.softmax(output, dim=1).squeeze(dim=0)[0]
 
-		tf = transforms.Compose([
-			transforms.ToPILImage(),
-			transforms.Resize((576, 576), transforms.InterpolationMode.BICUBIC)
-			])
-
-		mask = tf(output[0,0,:,:])
-		plt.imshow(mask, cmap='gray')
-		plt.show()
-
-
+	    tf = transforms.Compose([
+	    transforms.ToPILImage(),
+	    transforms.Resize((576, 576), transforms.InterpolationMode.BICUBIC)
+	    ])
+	    
+	    mask = np.array(tf(probs))
+	    ax[1].imshow((mask>0), cmap='gray')
+	    plt.show()
 
 if __name__ == '__main__':
 	main()
