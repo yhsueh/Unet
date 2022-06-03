@@ -13,6 +13,9 @@ import unet
 global verbose
 verbose = False
 
+global verbose
+verbose = False
+
 class Detector:
     def __init__(self): 
         self.model = unet.Unet()
@@ -20,11 +23,11 @@ class Detector:
 
     def configuration(self):
         ### hyperparameters ###
-        # defining the number of epochs
-        self.n_epochs = 1
+        # define the number of epochs
+        self.n_epochs = 1500
         
         # define batch size
-        self.batch_size = 10
+        self.batch_size = 5
        
         # empty list to store training losses
         self.train_losses = []
@@ -33,7 +36,7 @@ class Detector:
         self.val_losses = []
 
         ### optimizer ###
-        self.optimizer = optim.SGD(self.model.parameters(), lr = 0.01)
+        self.optimizer = optim.SGD(self.model.parameters(), lr = 0.005)
 
         ### criterion ###
         self.criterion = nn.CrossEntropyLoss()
@@ -50,7 +53,7 @@ class Detector:
 
     def _grab_image(self, directory, mask=False):
         imgs = []
-        directory = os.path.join(directory + '\\*.png')
+        directory = os.path.join(directory + '/*.png')
         for infile in glob.glob(directory):
                 with Image.open(infile).convert('L') as im:
                     if not mask:
@@ -58,19 +61,8 @@ class Detector:
                         im /= 255.0
                         imgs.append(im)
                     else:
-                        # class one: defects; class two: background
                         mask_class_one = np.array(im).astype(bool)
-                        mask_class_two = ~mask_class_one
-
-                        '''
-                        f, ax = plt.subplots(1,2)
-                        print('mask_one', mask_class_one.astype('float32'))
-                        print('mask_two', mask_class_two.astype('float32'))
-                        ax[0].imshow(mask_class_one, cmap='gray')
-                        ax[1].imshow(mask_class_two, cmap='gray')
-                        plt.show()
-                        '''
-                        imgs.append([mask_class_one.astype('float32'), mask_class_two.astype('float32')])
+                        imgs.append(mask_class_one.astype('float32'))
         imgs = np.array(imgs)
         return imgs
 
@@ -82,10 +74,12 @@ class Detector:
         torch.save(self.model.state_dict(), os.path.join(path, timestamp_str))
 
     def train(self):
+        display_epoch = 50
         self.model.train()
         print('-----------------Begin training-----------------')
         for epoch in range(self.n_epochs):
             loss_train = 0
+            display_flag = True
             # randomly generate subsample batch
             permutation = torch.randperm(self.train_x.size()[0])
 
@@ -98,13 +92,17 @@ class Detector:
                 batch_x = self.train_x[indicies]
                 batch_y = self.train_y[indicies]
                 batch_x = torch.unsqueeze(batch_x, dim = 1)
+
+                #if torch.cuda.is_available():
+                #    batch_x = batch_x.cuda()
+                #    batch_y = batch_y.cuda()
                 
                 ### Model Prediction ###
                 pred_y = self.model(batch_x)
 
                 ### Crop mask in order to match it with the prediction ###
                 diff = int((batch_y.shape[2] - pred_y.shape[2])/2)
-                batch_y = batch_y[:,:,diff:(batch_y.shape[2]-diff),diff:(batch_y.shape[2]-diff)]
+                batch_y = batch_y[:,diff:(batch_y.shape[2]-diff),diff:(batch_y.shape[2]-diff)]
 
                 if verbose:
                     print('batch_x shape: ', batch_x.shape)
@@ -112,16 +110,31 @@ class Detector:
                     print('Model predictions pred_y shape: ', pred_y.shape)
 
                 ### Compute the training loss ###
-                loss_train = self.criterion(pred_y, batch_y)
-                self.train_losses.append(loss_train)
-
+                loss_train = self.criterion(pred_y, batch_y.long())
+                
+                if verbose and epoch%display_epoch == 0:
+                    display_flag = False
+                    display_pred_y_softmax = F.softmax(pred_y, dim=1)[0,1,:,:]
+                    display_pred_y = display_pred_y_softmax.cpu().detach().numpy()
+                    display_batch_y = batch_y.cpu().detach().numpy()[0,:,:]
+                    
+                    print('pred_y mean:{}, pred_y_max:{}'.format(np.mean(display_pred_y),np.max(display_pred_y)))
+                    print('batch_y mean:{}, batch_y_max:{}'.format(np.mean(display_batch_y), np.max(display_batch_y)))
+                    
+                    combined_image = np.concatenate((display_pred_y, display_batch_y), axis=1)
+                    plt.imshow(combined_image, cmap='gray')
+                    plt.show()
+                
                 ### Backprop and update weights ###
                 loss_train.backward()
                 self.optimizer.step()
-            print('Epoch: {}, Loss: {}\n'.format(epoch, loss_train))
 
+            self.train_losses.append(loss_train.item())
+            if epoch%display_epoch == 0:
+                print('Epoch: {}, Loss: {}\n'.format(epoch+1, loss_train))
+    
     def display_result(self):
-        plt.plot(np.arange(100).astype(int)+1, self.train_losses, label='training loss')
+        plt.plot(np.arange(self.n_epochs).astype(int)+1, self.train_losses, label='training loss')
         plt.xlabel('epoch')
         plt.ylabel('cross entroy loss')
         plt.legend()
